@@ -47,7 +47,7 @@ int analyze_port(int argc, char **argv) {
         exit(1);
     }
     port_length = strlen(argv[1]);
-    if (port_length > 4 && port_length < 65000) {
+    if (!(port_length >= 4 && port_length <= 65000)) {
         perror("count of port symbols does not correct");
         exit(1);
     }
