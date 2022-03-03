@@ -2,68 +2,18 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
-#include <errno.h>
-//#include <err.h>
-//#include <error.h>
-#include <netdb.h> // for getnameinfo()
+#include <ctype.h>
+#include "server_query.c"
 
 // socket headers
 #include <sys/socket.h>
-#include <sys/types.h>
 #include <netinet/in.h>
-
-#include <arpa/inet.h>
 
 #define BACKLOG 3 // using in listen
 
-
-void getProcessorUsage(char proc_usage_str[]) {
-    double a[4], b[4], avg_usage;
-    FILE *fp;
-
-    fp = fopen("/proc/stat", "r");
-    fscanf(fp, "%*s %lf %lf %lf %lf",&a[0], &a[1], &a[2], &a[3]);
-//    printf("%lf %lf %lf %lf\n",a[0], a[1], a[2], a[3]);
-    fclose(fp);
-    sleep(1);
-
-    fp = fopen("/proc/stat", "r");
-    fscanf(fp, "%*s %lf %lf %lf %lf",&b[0], &b[1], &b[2], &b[3]);
-    fclose(fp);
-
-    avg_usage = ((b[0] + b[1] + b[2]) - (a[0] + a[1] + a[2])) /
-            ((b[0] + b[1] + b[2] + b[3]) - (a[0] + a[1] + a[2] + a[3]));
-
-//    printf("%lf\n", avg_usage);
-    avg_usage = avg_usage * 100;
-    snprintf(proc_usage_str, 10, "%.1lf%%", avg_usage);
-//    printf("%s\n", proc_usage_str);
-}
-
-void getHostname(char hostname_str[]) {
-    FILE *fp;
-
-    fp = fopen("/proc/sys/kernel/hostname", "r");
-    fscanf(fp, "%s", hostname_str);
-    fclose(fp);
-
-//    printf("%s\n", hostname_str);
-}
-
-void getProcessorName(char proc_name[]) {
-    FILE *fp;
-
-    fp = popen("cat /proc/cpuinfo | grep \"model name\" | head -n 1 "
-               "| awk '{for(i=4;i<=NF-1;i++) printf $i\" \"} {printf $NF}'", "r");
-    fgets(proc_name, 100, fp);
-    pclose(fp);
-
-//    printf("%s\n", proc_name);
-}
-
 void writeServerMessage(int socket, char buffer[]){
     // prepare variables
-    char string_to_write[100];
+    char string_to_write[200];
     char *request;
     char formatted_request[100];
     int i;              // counter for cycle
@@ -90,40 +40,50 @@ void writeServerMessage(int socket, char buffer[]){
     write(socket, message, strlen(message));
 }
 
-int main(int argc, char **argv){
-//    write func for check arguments
-    char* port;
-    if (argc > 1) {
-        port = argv[1];
+int analyze_port(int argc, char **argv) {
+    int port, port_length;
+    if (argc != 2) {
+        perror("count of arguments does not correct");
+        exit(1);
     }
-//    printf("port is %s\n", port);
-    printf("count of arguments %d\n", argc);
-    printf("first argument is %s\n", argv[0]);
+    port_length = strlen(argv[1]);
+    if (port_length > 4 && port_length < 65000) {
+        perror("count of port symbols does not correct");
+        exit(1);
+    }
+    for (int i = 0; i < port_length; ++i) {
+        if (!isdigit(argv[1][i])) {
+            perror("port contain symbols that is not a number");
+            exit(1);
+        }
+    }
+    port = atoi(argv[1]);
+    return port;
+}
 
-//    function tests
-    char proc_usage_str[10];
-    getProcessorUsage(proc_usage_str);
-    printf("%s\n",proc_usage_str);
-
-    char hostname_str[40];
-    getHostname(hostname_str);
-    printf("%s\n", hostname_str);
-
-    char proc_name[100];
-    getProcessorName(proc_name);
-    printf("%s\n", proc_name);
+int main(int argc, char **argv){
+    // port analyze
+    int port = analyze_port(argc, argv);
 
 //    socket
     int serverSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (setsockopt(serverSocket, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) < 0)
+    if (serverSocket < 0) {
+        perror("Socket creation error");
+        exit(1);
+    }
+    if (setsockopt(serverSocket, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) < 0) {
         perror("setsockopt(SO_REUSEADDR) failed");
-    if (setsockopt(serverSocket, SOL_SOCKET, SO_REUSEPORT, &(int){1}, sizeof(int)) < 0)
+        exit(1);
+    }
+    if (setsockopt(serverSocket, SOL_SOCKET, SO_REUSEPORT, &(int){1}, sizeof(int)) < 0) {
         perror("setsockopt(SO_REUSEPORT) failed");
+        exit(1);
+    }
 
 //    construct a local address structure
     struct sockaddr_in serverAddress;
     serverAddress.sin_family = AF_INET;
-    serverAddress.sin_port = htons(8000);
+    serverAddress.sin_port = htons(port);
     serverAddress.sin_addr.s_addr = INADDR_ANY;
 
 //    bind socket to local address
@@ -142,9 +102,12 @@ int main(int argc, char **argv){
 //    wait for connection, create a connected socket if a connection is pending
     while (1) {
         clientSocket = accept(serverSocket, NULL, NULL);
+        if (clientSocket < 0) {
+            perror("Connection socket error");
+            exit(1);
+        }
         read(clientSocket, buffer, 1024);
         writeServerMessage(clientSocket, buffer);
-//        write(clientSocket, message, strlen(message));
         close(clientSocket);
     }
     return 0;
