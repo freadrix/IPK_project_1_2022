@@ -18,7 +18,7 @@ For test functionality you will need to run server. You can do it using
 ### Run
 After that you can run the server using
 `./hinfosvc port`.\
-Port is a number which has length min 4 and max 65000, otherwise program
+Port is a number which has length min 4 and max 5, otherwise program
 writes out the error.
 ## Usage
 
